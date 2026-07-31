@@ -27,6 +27,8 @@
 
 主要实现提交是 `43ebfcc`、`eba498f`、`7380b95`、`8523159` 和 `2b37292`。质量门禁和受保护的发布流程在 `0f810db`。对应测试在 `test/mcp-server.test.ts`、`test/validation.test.ts`、`test/report.test.ts`、`test/git.test.ts` 和 `test/cli-entry-smoke.mjs` 中。
 
+Task 2 的手测记录在 `task2-manual-test.md`。这次使用真实 MCP 客户端完成了 14 组独立验收，覆盖普通变更、rename/copy、未跟踪和 ignored 文件、非 `main` 默认分支，以及没有共同祖先的历史，全部通过。
+
 ## 有意没有做什么？
 
 我没有试图在这段时间里重做所有接口。CLI 还留有后续问题：手写参数解析对部分错误输入和带空格路径处理不够好，`json` 类型也还没有真正由 core 实现。MCP 的 Shell 能力已经要求显式 opt-in，但它仍是受信任的本地能力，不是给不受信任远程调用方用的沙箱。
@@ -52,6 +54,8 @@
 
 手测还发现：如果不传 `baseRef`，只有 `master` 分支的仓库会失败。这个发现后来促成了 `8523159` 中的默认分支处理和回归测试，而不是把它留成没有说明的限制。
 
+后续 Task 2 手测又从 MCP 边界确认了同样的 Git 边界，和自动化测试结果一致。同时保留了一个诚实的限制：浅克隆如果没有可用的本地 base ref，工具不会自动 fetch。
+
 ## 用过哪些命令验证，结果是什么？
 
 - `npm run typecheck` — 通过。
@@ -62,6 +66,7 @@
 - `npm ls --depth=0` — 通过。
 - `npm audit --omit=dev --package-lock-only --audit-level=moderate` — 通过，没有已知生产依赖漏洞。
 - 使用 `Client` + `StdioClientTransport` 的真实 MCP 客户端 — 工具发现、正常/错误仓库调用、错误 base ref、Shell opt-in、失败检查继续执行、命令限制均通过。
+- `task2-manual-test.md` — 通过；14 组独立 MCP 验收，包含 added/modified/deleted、rename/copy、untracked/ignored、`master` 默认分支和无共同祖先历史。
 - `npm run inspector -- review --repo . --base-ref main --validate false` — 重现了原始 CLI 失败行为；MCP 现在会返回结构化 failed 结果并继续执行。
 
 ## 遇到什么阻塞，怎么处理？
@@ -73,6 +78,7 @@
 目前的限制是：
 
 - CLI 参数校验和 CLI/MCP 输出一致性还没完成；`json` 目前只是声明了类型，还没有真正的 serializer。
+- 如果浅克隆没有可用的本地 base ref，工具会返回错误，不会自动从远端 fetch。
 - Shell 验证已经 opt-in 且有限制，但还不是沙箱。如果信任模型扩大到远程或不受信任调用方，需要更强的策略。
 - CI 现在已经运行质量门禁，但 npm 包仍然有意保持 private，还没有发布。
 

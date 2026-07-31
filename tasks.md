@@ -11,6 +11,7 @@
 - 已完成：T-01、T-02、T-04、T-05、T-06。
 - 已部分完成：T-03。当前有显式 Shell opt-in、命令数量/长度限制、超时和输出上限，但仍是受信任本地能力，不是沙箱。
 - 后续提交已完成：T-08 的默认分支、无共同祖先、rename/copy/untracked Git 处理；T-10 的 npm bin 和构建后 CLI 入口 smoke test；T-11 的独立测试配置和 CI quality gate。
+- Task 2 手动验收已完成：`task2-manual-test.md` 记录了 14 组真实 MCP 检查，全部通过；浅克隆无可用 base ref 不自动 fetch，保留为明确边界。
 - 仍待处理：T-07（CLI 参数与 JSON）、T-09（CLI 输出文件/接口策略）；T-11 还剩 lint/format 选择和是否公开发布 npm 包的产品决策。
 
 ## 1. 调研结论

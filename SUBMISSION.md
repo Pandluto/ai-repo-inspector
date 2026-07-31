@@ -27,6 +27,8 @@ The implemented fixes are:
 
 The main implementation commits are `43ebfcc`, `eba498f`, `7380b95`, `8523159`, and `2b37292`. The quality-gate and guarded-release work is in `0f810db`. The corresponding tests are in `test/mcp-server.test.ts`, `test/validation.test.ts`, `test/report.test.ts`, `test/git.test.ts`, and `test/cli-entry-smoke.mjs`.
 
+The Task 2 manual acceptance is recorded in `task2-manual-test.md`. It used a real MCP client and passed 14 independent checks covering ordinary changes, rename/copy, untracked and ignored files, non-`main` default branches, and histories without a common ancestor.
+
 ## What did you intentionally not do?
 
 I did not try to redesign every interface in the timebox. The CLI still has follow-up issues: its hand-written parser mishandles some invalid inputs and paths with spaces, and the `json` format type is not implemented by the core. The MCP Shell capability is safer by requiring explicit opt-in, but it is still a trusted local capability rather than a sandbox for untrusted remote callers.
@@ -52,6 +54,8 @@ The first explanation of the MCP path bug said that the call would always fail. 
 
 The manual test also found that an omitted `baseRef` failed for a repository whose branch was `master`. That finding led to the Git default-branch change in `8523159` and a regression test, rather than being left as an undocumented limitation.
 
+The later Task 2 manual acceptance matched the automated Git tests and confirmed the same edge cases through the MCP boundary. It also kept one honest boundary in the record: a shallow clone without a usable local base ref is not automatically fetched.
+
 ## Commands used to verify the result, with outcomes
 
 - `npm run typecheck` — passed.
@@ -62,6 +66,7 @@ The manual test also found that an omitted `baseRef` failed for a repository who
 - `npm ls --depth=0` — passed.
 - `npm audit --omit=dev --package-lock-only --audit-level=moderate` — passed with no known production advisories.
 - Real MCP client using `Client` + `StdioClientTransport` — passed tool discovery, valid/invalid repository calls, invalid base ref handling, Shell opt-in, failed-validation continuation, and command limits.
+- `task2-manual-test.md` — passed; 14 independent MCP acceptance checks, including added/modified/deleted, rename/copy, untracked/ignored, `master` default branch, and no-common-ancestor history.
 - `npm run inspector -- review --repo . --base-ref main --validate false` — reproduced the original CLI failure behavior; the MCP path now returns a structured failed result and continues.
 
 ## A blocker you hit and how you approached it
@@ -73,6 +78,7 @@ When the repository was nested inside the unrelated `study-map` project, Vitest 
 The current limitations are:
 
 - CLI argument validation and CLI/MCP output parity are not finished; `json` is still only a declared type, not a working serializer.
+- A shallow clone with no usable local base ref is reported as an error; the tool does not automatically fetch from a remote.
 - Shell validation is opt-in and bounded, but it is not a sandbox. Remote or untrusted use would need a stronger policy.
 - The CI workflow now runs the quality gate, but the npm package is intentionally still private and has not been published.
 
