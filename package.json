@@ -4,14 +4,26 @@
   "private": true,
   "type": "module",
   "description": "A repository review tool with CLI and MCP interfaces.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Pandluto/ai-repo-inspector.git"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org"
+  },
+  "files": [
+    "dist/src"
+  ],
   "bin": {
-    "inspector": "./dist/cli.js"
+    "inspector": "./dist/src/cli.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "inspector": "tsx src/cli.ts",
     "mcp-server": "tsx src/mcp-server.ts",
+    "check": "npm run typecheck && npm test && npm run test:entry && npm pack --dry-run",
     "test": "vitest run",
+    "test:entry": "npm run build && node test/cli-entry-smoke.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
