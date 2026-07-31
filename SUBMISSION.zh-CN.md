@@ -69,6 +69,8 @@ CLI 仍然保留，但在它经过同样的测试和整理之前，我不会声�
 - MCP `initialize` / `tools/list` — 通过。
 - 使用 `repo_path` 调用 MCP `review_repository` — 基线重现路径被忽略的问题，最终回归测试通过。
 - `npm run inspector -- review --repo . --base-ref main --validate false` — 基线重现验证失败直接中止，MCP 现在会返回结构化 failed 结果并继续执行。
+- 使用 `Client` + `StdioClientTransport` 的探索式 MCP 客户端 — 工具发现、正常/错误仓库调用、错误 base ref、Shell opt-in、失败检查继续执行、命令数量/长度限制均通过。
+- 用只有 `master` 分支且不传 `baseRef` 的临时仓库测试 — 发现一个遗留问题：服务仍然默认使用 `main`。
 
 ## 遇到什么阻塞，怎么处理？
 
@@ -80,13 +82,14 @@ CLI 仍然保留，但在它经过同样的测试和整理之前，我不会声�
 
 - CLI 参数解析和 CLI/MCP 行为一致性仍待后续处理。
 - Git 重命名、复制和未跟踪文件处理仍待后续处理。
+- 不传 `baseRef` 时，服务仍假设仓库有 `main`；只有 `master` 的仓库会返回 `Base ref "main" was not found in the repository.`。
 - npm bin/build 布局和 CI/发布流程仍待后续处理。
 - Shell 验证仍然是高权限本地能力；MCP 已要求显式 opt-in，但未来如果远程或不受信任部署，需要命令白名单或更强隔离。
 
 接下来我会做三件事：
 
-1. 让 CLI 参数解析和 CLI 输出契约与 MCP 结果模型保持一致。
-2. 改进 Git 边界状态解析和默认 base ref 行为。
+1. 决定自动探测默认分支，还是要求调用方明确传 `baseRef`，并为此补回归测试。
+2. 让 CLI 参数解析和 CLI 输出契约与 MCP 结果模型保持一致。
 3. 修复 npm bin/build 布局并增加 CI 质量门禁。
 
 ## 大致集中工作时间

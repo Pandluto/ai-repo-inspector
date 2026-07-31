@@ -69,6 +69,8 @@ I also checked Node's exec behavior. The final implementation adds an explicit t
 - MCP `initialize` / `tools/list` — passed.
 - MCP `review_repository` with `repo_path` — baseline reproduced the ignored-path bug; the final regression test passes.
 - `npm run inspector -- review --repo . --base-ref main --validate false` — baseline reproduced validation failure aborting with exit code 1; MCP validation failure now returns a structured failed result and continues.
+- Exploratory MCP client using `Client` + `StdioClientTransport` — passed discovery, valid and invalid repository calls, invalid base ref handling, Shell opt-in, failed-validation continuation, and command count/length limits.
+- Exploratory MCP client with a temporary repository whose branch was `master` and no `baseRef` argument — exposed a remaining issue: the service still defaults to `main`.
 
 ## A blocker you hit and how you approached it
 
@@ -80,13 +82,14 @@ The current limitations are:
 
 - CLI argument parsing and CLI/MCP behavior parity remain follow-up work.
 - Git rename/copy/untracked-file handling remains follow-up work.
+- When `baseRef` is omitted, the service still assumes the repository has a `main` ref; a `master`-only repository returns `Base ref "main" was not found in the repository.`
 - The built npm bin path and CI/release workflow remain follow-up work.
 - Shell validation is still a powerful local capability; MCP requires explicit opt-in, but a future remote/untrusted deployment would need an allowlist or stronger isolation.
 
 The next three things I would do are:
 
-1. Bring the CLI parser and CLI output contract into line with the MCP result model.
-2. Improve Git edge-case parsing and default-base-ref behavior.
+1. Decide whether to detect the repository's default branch or require an explicit `baseRef`, then add a regression test.
+2. Bring the CLI parser and CLI output contract into line with the MCP result model.
 3. Fix the npm bin/build layout and add CI quality gates.
 
 ## Approximate focused-work time
