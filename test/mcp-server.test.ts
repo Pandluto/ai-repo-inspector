@@ -45,8 +45,12 @@ async function callReview(repositoryPath: string, extra: Record<string, unknown>
 }
 
 function resultText(result: Awaited<ReturnType<typeof callReview>>): string {
-  return result.content
-    .filter((item): item is { type: "text"; text: string } => item.type === "text")
+  const content = result.content as Array<{ type: string; text?: string }>;
+
+  return content
+    .filter((item): item is { type: "text"; text: string } =>
+      item.type === "text" && typeof item.text === "string",
+    )
     .map((item) => item.text)
     .join("\n");
 }
