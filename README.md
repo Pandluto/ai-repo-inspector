@@ -63,6 +63,13 @@ do not expose this server to untrusted clients without adding a command
 allowlist or stronger process isolation. Validation output is bounded and
 reported as Markdown with separate status, exit code, stdout, and stderr.
 
+For changed files, an explicit baseRef is compared with HEAD. When baseRef is
+omitted, the server uses origin/HEAD when available, then checks main, master,
+trunk, and develop. Rename and copy entries preserve their previous path.
+Non-ignored untracked files are included as untracked; tracked working-tree
+changes that are not committed to either ref are not included. If the base and
+HEAD have no common ancestor, the inspector falls back to a two-commit diff.
+
 Start the stdio server with:
 
 ```bash

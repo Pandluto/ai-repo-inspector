@@ -43,7 +43,8 @@ export function markdownReport(input: ReportInput): string {
   const lines = ["# Review Report: " + escapeInline(input.repositoryPath), "", "## Changed files"];
 
   for (const file of input.changedFiles) {
-    lines.push("- " + escapeInline(file.path) + " (" + file.status + ")");
+    const origin = file.oldPath ? "; previous path: " + escapeInline(file.oldPath) : "";
+    lines.push("- " + escapeInline(file.path) + " (" + file.status + origin + ")");
   }
 
   lines.push("", "## Validation output");
