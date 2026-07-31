@@ -2,97 +2,87 @@
 
 ## What did you investigate first, and why?
 
-I started with `README.md`, `SUBMISSION.md`, and the source files. I wanted to understand the intended behavior before changing anything.
+I started with `README.md`, `SUBMISSION.md`, and the source files. I wanted to understand what the tool promised before deciding what to change.
 
-I then followed the main path through Git change detection, validation commands, report generation, the CLI adapter, and the MCP adapter.
+I followed the main path through Git change detection, validation commands, report generation, the CLI adapter, and the MCP adapter. The initial baseline showed two important failures:
 
-The baseline checks were:
+- The MCP schema exposed `repo_path`, but the handler read `repoPath`. A real call could therefore inspect the server's current directory and return `Review Report: undefined`.
+- A failed validation command aborted the review instead of appearing as a failed result in the report.
 
-- `npm run typecheck` passed.
-- `npm test -- --reporter=verbose` passed: 1 test file and 1 test.
-- `npm run build` passed, but produced `dist/src/cli.js` while the package entry points to `dist/cli.js`.
-- `npm audit --omit=dev --package-lock-only --audit-level=moderate` found no known production dependency advisories.
-- The MCP server started, and `initialize` and `tools/list` worked.
-- A real MCP call using the documented `repo_path` field returned `Review Report: undefined`, so the requested path was ignored.
-- Running the CLI with `--validate false` stopped with `Fatal error` instead of putting the failed check in the report.
-
-This gave me a clear baseline and separated startup problems from behavior problems.
+The original starter had one report happy-path test. After the fixes, the branch has four Vitest test files with 15 passing tests, plus a separate smoke test for the built CLI entry point.
 
 ## What did you choose to implement or fix?
 
-I chose MCP-first for this timebox. In other words, I am treating the MCP server as the main interface to make reliable first.
+I chose MCP-first for this timebox. I treated the MCP server as the interface that needed to become reliable first, while keeping the CLI as a follow-up interface.
 
-The first fixes I selected are:
+The implemented fixes are:
 
-1. Fix the `repo_path`/`repoPath` mismatch and remove the untyped `any` input.
-2. Reject a missing or invalid repository path instead of silently checking the server's current directory.
-3. Return failed validation commands as results and continue with the other commands.
-4. Make MCP errors understandable and add tests that call the real MCP interface.
-5. Document what callers are allowed to run and add limits for long-running or very large commands.
+1. Validate MCP input and use the public `repo_path` field correctly.
+2. Return clear errors for invalid repositories and base refs instead of silently using the server's working directory.
+3. Preserve failed validation results and continue with later checks.
+4. Add explicit Shell-validation opt-in, command-count/length limits, timeouts, output limits, and separate stdout/stderr reporting.
+5. Make reports safer by escaping Markdown, redacting common secret patterns, and truncating large output.
+6. Handle Git renames, copies, untracked files, non-`main` default branches, and histories without a common ancestor.
+7. Fix the built CLI bin path and add a smoke test for the built entry point.
 
-The MCP implementation and regression tests are now complete on the feature branch. The implementation commits are 43ebfcc for repository/request validation, eba498f for structured validation failures, and 7380b95 for validation hardening and output safety.
+The main implementation commits are `43ebfcc`, `eba498f`, `7380b95`, `8523159`, and `2b37292`. The quality-gate and guarded-release work is in `0f810db`. The corresponding tests are in `test/mcp-server.test.ts`, `test/validation.test.ts`, `test/report.test.ts`, `test/git.test.ts`, and `test/cli-entry-smoke.mjs`.
 
 ## What did you intentionally not do?
 
-I did not try to fix every issue at once. I left the CLI parser, Git rename/untracked-file handling, report formatting, npm packaging, and CI as follow-up work.
+I did not try to redesign every interface in the timebox. The CLI still has follow-up issues: its hand-written parser mishandles some invalid inputs and paths with spaces, and the `json` format type is not implemented by the core. The MCP Shell capability is safer by requiring explicit opt-in, but it is still a trusted local capability rather than a sandbox for untrusted remote callers.
 
-The CLI is still present, but I am not claiming that it has the same reliability as the MCP path until it is tested and brought into line.
+I did not publish an npm package. The package remains private, while `0f810db` adds a CI check on pushes, pull requests, and manual runs plus a tag-based release workflow that refuses to publish while the package is private.
 
 ## Interface decision
 
-- Decision: MCP-first for this timebox. The MCP server is the interface I am making reliable first.
+- Decision: MCP-first for this timebox. The MCP server is the interface I made reliable first.
 - Primary user and execution environment: A local AI coding tool talking to a local stdio MCP server and a local Git checkout.
-- Trust boundary and allowed capabilities: The caller supplies a repository path and can currently supply shell commands to run. That is a powerful capability, so the current assumption is a trusted local caller. If untrusted callers must be supported, commands need an allowlist or explicit opt-in with isolation.
-- Reliability, discoverability, latency/context, and output tradeoffs: MCP is easy for an AI client to discover and call, but command output can make a report too large. A failed check should be returned clearly instead of aborting the whole review. Low-level stack traces should not be sent straight back to the caller.
-- How supported interfaces remain consistent: MCP and the shared core should use one request/result contract. Until the CLI is brought up to the same standard, the docs should not imply that CLI and MCP are equally reliable.
-- Evidence that would change this decision: If the main users turn out to be terminal-based developers, or if the tool must ship as a standalone command, I would reconsider CLI-first or a hybrid approach.
+- Trust boundary and allowed capabilities: The caller supplies a repository path and may request Shell validation only with explicit opt-in. This remains a high-impact local capability. An untrusted or remote deployment would need a command allowlist or stronger process isolation.
+- Reliability, discoverability, latency/context, and output tradeoffs: MCP is easy for an AI client to discover and call. Reports now keep stdout/stderr, status, exit code, timeout state, and bounded output, which makes failures useful without allowing command output to grow the context without limit.
+- How supported interfaces remain consistent: MCP and the shared core use the same repository, validation, and report model. The CLI still exists, but its parser and JSON output are follow-up work; the docs do not claim that CLI and MCP have identical guarantees yet.
+- Evidence that would change this decision: If terminal-based developers become the main users, or if the tool must ship as a standalone command, I would reconsider CLI-first or a hybrid approach.
 
 ## How did you use an AI coding agent?
 
-I used AI coding agents to read the repository, trace the data flow, run the checks, exercise the MCP protocol, compare the existing research with the code, and organize the findings into research.md and tasks.md. Two delegated implementation attempts went out of scope, so I stopped them, reviewed their changes, and implemented the MCP fixes directly on the feature branch.
+I used AI coding agents to inspect the repository, trace the data flow, write and review tests, exercise the MCP protocol, compare proposed changes with the source, and update the research, task list, and submission notes. I reviewed the changes against the actual test output and kept the implementation focused on the MCP-first decision instead of accepting every possible cleanup.
 
 ## Where did you check, correct, or reject an AI suggestion? (required)
 
-The first explanation of the MCP path bug said that the call would always fail. I tested it through JSON-RPC and found the more dangerous behavior: the server can use its own current directory and return a report headed `Review Report: undefined`. I corrected the finding to describe the silent wrong-directory behavior.
+The first explanation of the MCP path bug said that the call would always fail. I tested it through JSON-RPC and found the more dangerous behavior: the server could use its own current directory and return a report headed `Review Report: undefined`. I corrected the finding to describe the silent wrong-directory behavior.
 
-I also checked Node's exec behavior. The final implementation adds an explicit timeout, output buffer, command-count and command-length limits, plus a clear opt-in requirement for MCP Shell validation.
+The manual test also found that an omitted `baseRef` failed for a repository whose branch was `master`. That finding led to the Git default-branch change in `8523159` and a regression test, rather than being left as an undocumented limitation.
 
 ## Commands used to verify the result, with outcomes
 
-- `npm install` — dependencies installed.
 - `npm run typecheck` — passed.
-- `npm test -- --reporter=verbose` — passed; 3 test files, 11 tests.
-- `npm run build` — passed; exposed the build-output/bin mismatch.
+- `npm test -- --reporter=verbose` — passed; 4 test files, 15 tests.
+- `npm run build` — passed.
+- `npm run test:entry` — passed; built `dist/src/cli.js` and ran the CLI smoke test.
+- `npm run check` — passed; runs typecheck, the test suite, the built-entry smoke test, and `npm pack --dry-run`.
 - `npm ls --depth=0` — passed.
 - `npm audit --omit=dev --package-lock-only --audit-level=moderate` — passed with no known production advisories.
-- `npm run mcp-server` — server started over stdio.
-- MCP `initialize` / `tools/list` — passed.
-- MCP `review_repository` with `repo_path` — baseline reproduced the ignored-path bug; the final regression test passes.
-- `npm run inspector -- review --repo . --base-ref main --validate false` — baseline reproduced validation failure aborting with exit code 1; MCP validation failure now returns a structured failed result and continues.
-- Exploratory MCP client using `Client` + `StdioClientTransport` — passed discovery, valid and invalid repository calls, invalid base ref handling, Shell opt-in, failed-validation continuation, and command count/length limits.
-- Exploratory MCP client with a temporary repository whose branch was `master` and no `baseRef` argument — exposed a remaining issue: the service still defaults to `main`.
+- Real MCP client using `Client` + `StdioClientTransport` — passed tool discovery, valid/invalid repository calls, invalid base ref handling, Shell opt-in, failed-validation continuation, and command limits.
+- `npm run inspector -- review --repo . --base-ref main --validate false` — reproduced the original CLI failure behavior; the MCP path now returns a structured failed result and continues.
 
 ## A blocker you hit and how you approached it
 
-When the repository was nested inside the unrelated `study-map` project, Vitest picked up the parent project's Vite/Wrangler configuration and failed before running the test. I ran the repository from its own project root, reran the checks successfully, and recorded the parent-configuration problem as a follow-up item.
+When the repository was nested inside the unrelated `study-map` project, Vitest picked up the parent project's Vite/Wrangler configuration and failed before running the test. I ran the repository from its own project root, added an independent Vitest configuration, reran the checks successfully, and recorded the environment issue separately.
 
 ## Known limitations and the next three things you would do
 
 The current limitations are:
 
-- CLI argument parsing and CLI/MCP behavior parity remain follow-up work.
-- Git rename/copy/untracked-file handling remains follow-up work.
-- When `baseRef` is omitted, the service still assumes the repository has a `main` ref; a `master`-only repository returns `Base ref "main" was not found in the repository.`
-- The built npm bin path and CI/release workflow remain follow-up work.
-- Shell validation is still a powerful local capability; MCP requires explicit opt-in, but a future remote/untrusted deployment would need an allowlist or stronger isolation.
+- CLI argument validation and CLI/MCP output parity are not finished; `json` is still only a declared type, not a working serializer.
+- Shell validation is opt-in and bounded, but it is not a sandbox. Remote or untrusted use would need a stronger policy.
+- The CI workflow now runs the quality gate, but the npm package is intentionally still private and has not been published.
 
 The next three things I would do are:
 
-1. Decide whether to detect the repository's default branch or require an explicit `baseRef`, then add a regression test.
-2. Bring the CLI parser and CLI output contract into line with the MCP result model.
-3. Fix the npm bin/build layout and add CI quality gates.
+1. Make the CLI parser strict and either implement JSON output or remove the unused format option.
+2. Decide whether to implement the declared JSON output and whether to make the package public; only then enable a real npm release.
+3. If the trust model expands beyond a local client, replace arbitrary Shell validation with an allowlist/profile and isolation.
 
 ## Approximate focused-work time
 
-- Start: 2026-07-31 (investigation and implementation checkpoint)
-- Finish: 2026-07-31 (MCP implementation and final verification completed)
+- Start: 2026-07-31
+- Finish: 2026-07-31

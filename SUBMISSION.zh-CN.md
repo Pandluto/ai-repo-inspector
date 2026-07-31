@@ -2,97 +2,87 @@
 
 ## 我先调查了什么，为什么？
 
-我先读了 `README.md`、`SUBMISSION.md` 和源码，先搞清楚这个工具应该做什么，再决定改哪里。
+我先读了 `README.md`、`SUBMISSION.md` 和源码，先搞清楚这个工具承诺做什么，再决定改哪里。
 
-接着我顺着主流程看了一遍：Git 改动检测、验证命令、报告生成、CLI 入口和 MCP 入口。
+接着我顺着主流程看了一遍：Git 改动检测、验证命令、报告生成、CLI 入口和 MCP 入口。最初的基线里有两个关键问题：
 
-我先跑了现有检查：
+- MCP schema 对外暴露的是 `repo_path`，handler 却读取 `repoPath`。真实调用可能因此检查服务自己的当前目录，并返回 `Review Report: undefined`。
+- 验证命令失败会直接中止审查，而不是把失败写进报告。
 
-- `npm run typecheck` 通过。
-- `npm test -- --reporter=verbose` 通过：1 个测试文件、1 个测试用例。
-- `npm run build` 通过，但实际生成的是 `dist/src/cli.js`，包配置指向的是 `dist/cli.js`。
-- `npm audit --omit=dev --package-lock-only --audit-level=moderate` 没发现已知的生产依赖漏洞。
-- MCP 服务可以启动，`initialize` 和 `tools/list` 都能正常返回。
-- 按公开说明用 `repo_path` 做真实 MCP 调用时，返回了 `Review Report: undefined`，说明服务没有使用传入的路径。
-- CLI 执行 `--validate false` 时直接报 `Fatal error`，没有把失败的检查写进报告。
-
-这样我先有了一个明确的基线，也能区分“启动不了”和“启动了但行为不对”。
+原始题库只有一个报告生成的 happy-path 测试。修复后，这个分支有 4 个 Vitest 测试文件、15 个通过的测试，另外还有一个针对构建后 CLI 入口的 smoke test。
 
 ## 选择做什么实现或修复？
 
-这次我选择 MCP-first。简单说，就是先把 MCP 服务这条路跑稳。
+这次我选择 MCP-first，也就是先把 MCP 服务这条路跑稳，同时把 CLI 作为后续接口。
 
-我先选了这些修复：
+实际完成的修复包括：
 
-1. 修好 `repo_path`/`repoPath` 字段不一致的问题，并去掉没有类型保护的 `any`。
-2. 仓库路径缺失或无效时直接报清楚，不要悄悄检查 MCP 服务自己的当前目录。
-3. 检查命令失败时返回失败结果，并继续执行后面的检查。
-4. 让 MCP 的错误信息说得明白，并用真实的 MCP 调用补测试。
-5. 说清楚调用方能执行什么，并限制超时和过大的命令输出。
+1. 校验 MCP 输入，正确使用公开的 `repo_path` 字段。
+2. 仓库或 base ref 无效时返回清楚的错误，不再悄悄检查服务自己的当前目录。
+3. 保留验证失败结果，并继续执行后面的检查。
+4. 增加 Shell 验证的显式 opt-in、命令数量/长度限制、超时、输出限制，以及分开的 stdout/stderr。
+5. 对报告中的 Markdown 做转义，对常见 secret 做脱敏，并截断过大的输出。
+6. 处理 Git rename、copy、未跟踪文件、非 `main` 默认分支和没有共同祖先的历史。
+7. 修复构建后的 CLI bin 路径，并增加入口 smoke test。
 
-MCP 实现和回归测试已经在修复分支完成。实现提交包括：43ebfcc（仓库和请求校验）、eba498f（结构化验证失败）、7380b95（验证加固和输出安全）。
+主要实现提交是 `43ebfcc`、`eba498f`、`7380b95`、`8523159` 和 `2b37292`。质量门禁和受保护的发布流程在 `0f810db`。对应测试在 `test/mcp-server.test.ts`、`test/validation.test.ts`、`test/report.test.ts`、`test/git.test.ts` 和 `test/cli-entry-smoke.mjs` 中。
 
 ## 有意没有做什么？
 
-我没有试图一次把所有问题都解决。CLI 参数解析、Git 的重命名/未跟踪文件处理、报告格式、npm 打包和 CI 都先放到后面。
+我没有试图在这段时间里重做所有接口。CLI 还留有后续问题：手写参数解析对部分错误输入和带空格路径处理不够好，`json` 类型也还没有真正由 core 实现。MCP 的 Shell 能力已经要求显式 opt-in，但它仍是受信任的本地能力，不是给不受信任远程调用方用的沙箱。
 
-CLI 仍然保留，但在它经过同样的测试和整理之前，我不会声称 CLI 和 MCP 一样可靠。
+我没有发布 npm 包。包仍然保持 `private`；`0f810db` 增加了 push、pull request 和手动触发的 CI 检查，也增加了按 tag 触发、且在包为 private 时拒绝发布的保护流程。
 
 ## 接口决策
 
 - 决定（Decision）：这次先做 MCP-first，也就是先把 MCP 服务这条路跑稳。
 - 主要用户和运行环境（Primary user and execution environment）：本地 AI 编程工具，通过 stdio 连接本地 MCP 服务，检查本地 Git 仓库。
-- 信任边界和允许的能力（Trust boundary and allowed capabilities）：调用方会传仓库路径，目前也可以传 Shell 命令。这个能力权限很高，所以当前只假设调用方是本机受信任的客户端。如果以后要支持不受信任的调用方，就需要命令白名单，或者明确 opt-in 并做隔离。
-- 可靠性、发现性、延迟/上下文和输出取舍（Reliability, discoverability, latency/context, and output tradeoffs）：MCP 对 AI 客户端来说容易发现、容易调用，但命令输出很容易把报告撑得过大。我希望检查失败能清楚地返回，而不是让整个审查直接中断；底层 stack trace 也不应该原样返回给调用方。
-- 继续支持的接口如何保持一致（How supported interfaces remain consistent）：MCP 和共享 core 应该使用同一套请求/结果格式。在 CLI 还没有整理到同一水平前，文档不能暗示两者同样可靠。
-- 什么证据会改变这个决定（Evidence that would change this decision）：如果主要用户其实是直接在终端里工作的开发者，或者最终必须发布成独立命令行工具，我会重新考虑 CLI-first 或 hybrid。
+- 信任边界和允许的能力（Trust boundary and allowed capabilities）：调用方传入仓库路径；只有显式 opt-in 才能请求 Shell 验证。这仍然是高权限的本地能力。如果未来面向远程或不受信任调用方，需要命令白名单或更强的进程隔离。
+- 可靠性、发现性、延迟/上下文和输出取舍（Reliability, discoverability, latency/context, and output tradeoffs）：MCP 容易被 AI 客户端发现和调用。现在报告会保留 stdout/stderr、状态、退出码、超时状态，并限制输出大小，既方便诊断，也避免命令输出无限撑大上下文。
+- 继续支持的接口如何保持一致（How supported interfaces remain consistent）：MCP 和共享 core 使用同一套仓库、验证和报告模型。CLI 仍然存在，但它的参数解析和 JSON 输出还要后续处理；文档不会声称 CLI 和 MCP 已经完全等价。
+- 什么证据会改变这个决定（Evidence that would change this decision）：如果主要用户变成直接在终端里工作的开发者，或者必须发布成独立命令行工具，我会重新考虑 CLI-first 或 hybrid。
 
 ## 如何使用 AI 编程代理？
 
-我用 AI 编程代理阅读代码、追踪数据流、运行检查、实际测试 MCP 协议、对照源码核查已有调查，并把结果整理成 research.md 和 tasks.md。两个委派实现尝试偏离了范围，我停止了它们、检查并清理了无关改动，随后在修复分支上直接完成 MCP 修复。
+我用 AI 编程代理检查仓库、追踪数据流、编写和审查测试、实际调用 MCP、对照源码核查方案，并更新调查、任务清单和提交说明。我根据真实测试结果逐项检查改动，把范围控制在 MCP-first 决策内，没有把所有清理工作都塞进来。
 
 ## 在哪里检查、修正或拒绝了 AI 建议？（必填）
 
 最初有人把 MCP 路径问题解释成“调用一定会失败”。我用 JSON-RPC 实际调用后发现，更危险的情况是服务可能检查自己的当前目录，最后返回标题为 `Review Report: undefined` 的报告。因此我把结论改成了“静默检查错误目录”。
 
-我也核对了 Node 的 exec 行为。最终实现增加了明确的超时、输出缓冲区、命令数量和命令长度限制，并要求 MCP Shell 验证显式 opt-in。
+手测还发现：如果不传 `baseRef`，只有 `master` 分支的仓库会失败。这个发现后来促成了 `8523159` 中的默认分支处理和回归测试，而不是把它留成没有说明的限制。
 
 ## 用过哪些命令验证，结果是什么？
 
-- `npm install` — 依赖安装成功。
 - `npm run typecheck` — 通过。
-- `npm test -- --reporter=verbose` — 通过；3 个测试文件、11 个测试用例。
-- `npm run build` — 通过；发现构建产物路径和 bin 配置不一致。
+- `npm test -- --reporter=verbose` — 通过；4 个测试文件、15 个测试用例。
+- `npm run build` — 通过。
+- `npm run test:entry` — 通过；构建 `dist/src/cli.js` 并运行 CLI 入口 smoke test。
+- `npm run check` — 通过；它会跑类型检查、完整测试、构建后入口 smoke test 和 `npm pack --dry-run`。
 - `npm ls --depth=0` — 通过。
 - `npm audit --omit=dev --package-lock-only --audit-level=moderate` — 通过，没有已知生产依赖漏洞。
-- `npm run mcp-server` — MCP 服务成功通过 stdio 启动。
-- MCP `initialize` / `tools/list` — 通过。
-- 使用 `repo_path` 调用 MCP `review_repository` — 基线重现路径被忽略的问题，最终回归测试通过。
-- `npm run inspector -- review --repo . --base-ref main --validate false` — 基线重现验证失败直接中止，MCP 现在会返回结构化 failed 结果并继续执行。
-- 使用 `Client` + `StdioClientTransport` 的探索式 MCP 客户端 — 工具发现、正常/错误仓库调用、错误 base ref、Shell opt-in、失败检查继续执行、命令数量/长度限制均通过。
-- 用只有 `master` 分支且不传 `baseRef` 的临时仓库测试 — 发现一个遗留问题：服务仍然默认使用 `main`。
+- 使用 `Client` + `StdioClientTransport` 的真实 MCP 客户端 — 工具发现、正常/错误仓库调用、错误 base ref、Shell opt-in、失败检查继续执行、命令限制均通过。
+- `npm run inspector -- review --repo . --base-ref main --validate false` — 重现了原始 CLI 失败行为；MCP 现在会返回结构化 failed 结果并继续执行。
 
 ## 遇到什么阻塞，怎么处理？
 
-仓库之前临时放在无关的 `study-map` 项目里面，Vitest 自动读到了上级项目的 Vite/Wrangler 配置，还没开始跑测试就失败了。我把仓库作为独立项目根目录运行，重新检查后通过，并把这个上级配置干扰单独记录成后续任务。
+仓库之前临时放在无关的 `study-map` 项目里面，Vitest 自动读到了上级项目的 Vite/Wrangler 配置，还没开始跑测试就失败了。我把仓库作为独立项目根目录运行，增加独立 Vitest 配置，重新检查后通过，并把这个环境问题单独记录下来。
 
 ## 已知限制和接下来的三个动作
 
 目前的限制是：
 
-- CLI 参数解析和 CLI/MCP 行为一致性仍待后续处理。
-- Git 重命名、复制和未跟踪文件处理仍待后续处理。
-- 不传 `baseRef` 时，服务仍假设仓库有 `main`；只有 `master` 的仓库会返回 `Base ref "main" was not found in the repository.`。
-- npm bin/build 布局和 CI/发布流程仍待后续处理。
-- Shell 验证仍然是高权限本地能力；MCP 已要求显式 opt-in，但未来如果远程或不受信任部署，需要命令白名单或更强隔离。
+- CLI 参数校验和 CLI/MCP 输出一致性还没完成；`json` 目前只是声明了类型，还没有真正的 serializer。
+- Shell 验证已经 opt-in 且有限制，但还不是沙箱。如果信任模型扩大到远程或不受信任调用方，需要更强的策略。
+- CI 现在已经运行质量门禁，但 npm 包仍然有意保持 private，还没有发布。
 
 接下来我会做三件事：
 
-1. 决定自动探测默认分支，还是要求调用方明确传 `baseRef`，并为此补回归测试。
-2. 让 CLI 参数解析和 CLI 输出契约与 MCP 结果模型保持一致。
-3. 修复 npm bin/build 布局并增加 CI 质量门禁。
+1. 把 CLI 参数解析做严格，并实现 JSON 输出，或者删掉未实现的 format 选项。
+2. 决定是否实现已经声明的 JSON 输出、是否把包改成公开包；只有做出这个决定后才启用真正的 npm 发布。
+3. 如果未来要支持非本地受信任客户端，用命令白名单/profile 和隔离机制替代任意 Shell。
 
 ## 大致集中工作时间
 
-- 开始（Start）：2026-07-31（调查和实现检查点）
-- 结束（Finish）：2026-07-31（MCP 实现和最终验证完成）
+- 开始（Start）：2026-07-31
+- 结束（Finish）：2026-07-31

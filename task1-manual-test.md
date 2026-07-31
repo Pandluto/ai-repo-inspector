@@ -4,7 +4,7 @@
 
 确认 MCP 修复后，服务能否按公开契约工作，并主动寻找调查中没有覆盖的边界问题。
 
-本次测试针对修复分支 `codex/ai-repo-inspector-fixes` 进行。实际实现对应 MCP 修复提交 `7380b95`；之后的文档提交不改变这些运行行为。
+本次测试针对修复分支 `codex/ai-repo-inspector-fixes` 进行。手测时的 MCP 加固基线是 `7380b95`；手测发现的 Git 默认分支问题后来由 `8523159` 修复，构建后的 CLI 入口由 `2b37292` 修复。
 
 ## 测试方式
 
@@ -32,7 +32,7 @@
 | 超过 10 个验证命令 | 正确拒绝 | MCP schema 返回数组长度错误。 |
 | 单条命令超过 1000 字符 | 正确拒绝 | MCP schema 返回命令长度错误。 |
 
-## 本轮发现的遗留问题
+## 本轮发现的问题及后续修复
 
 创建了一个只有 `master` 分支的临时 Git 仓库，不传 `baseRef` 调用 MCP，结果为：
 
@@ -40,12 +40,7 @@
 Base ref "main" was not found in the repository.
 ```
 
-原因是 `src/git.ts` 仍把默认 base ref 固定为 `main`。后续需要二选一：
-
-1. 自动探测仓库的默认分支；或
-2. 不再猜测，要求调用方明确传入 `baseRef`。
-
-这项问题已经写入 `SUBMISSION.md`、`SUBMISSION.zh-CN.md` 和后续任务清单，暂未在本轮修复。
+原因是当时的 `src/git.ts` 把默认 base ref 固定为 `main`。这个手测结果没有被当作“服务本来就这样”而跳过：后续提交 `8523159` 增加了默认分支探测，并在 `test/git.test.ts` 中覆盖只有非 `main` 分支的仓库；同一提交还补了无共同祖先、rename/copy 和 untracked 文件的 Git 回归测试。当前分支的自动测试已经通过。
 
 ## 测试环境说明
 
@@ -55,4 +50,4 @@ Base ref "main" was not found in the repository.
 
 ## 结论
 
-MCP 的主要修复链路已经可用：能发现工具、检查正确仓库、拒绝无效输入、控制 Shell 验证权限，并保留验证失败结果。当前最明确的下一步是处理默认分支不是 `main` 的仓库。
+MCP 的主要修复链路已经可用：能发现工具、检查正确仓库、拒绝无效输入、控制 Shell 验证权限，并保留验证失败结果。手测发现的 `master` 默认分支问题已经在后续提交中修复；`0f810db` 又把入口 smoke test 纳入了 CI。当前更明确的后续是 CLI 参数/JSON 契约，以及不受信任环境下的 Shell 隔离。
