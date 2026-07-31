@@ -1,0 +1,55 @@
+name: Publish npm package
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      # npm trusted publishing uses OIDC; do not add a long-lived npm token here.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+
+      - run: npm ci
+      - run: npm run check
+
+      - name: Validate release metadata
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
+          const expectedTag = `v${packageJson.version}`;
+
+          if (packageJson.private === true) {
+            throw new Error("package.json is private; publishing is intentionally disabled.");
+          }
+
+          if (process.env.TAG_NAME !== expectedTag) {
+            throw new Error(
+              `Tag ${process.env.TAG_NAME} does not match package version ${expectedTag}.`,
+            );
+          }
+          NODE
+
+      # Configure this exact workflow as the npm trusted publisher first.
+      # npm generates provenance automatically for trusted GitHub publishing.
+      - name: Publish to npm
+        run: npm publish --access public
