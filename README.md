@@ -56,6 +56,13 @@ The report is written to `review-report.md`.
 
 ## MCP
 
+The review_repository tool accepts repo_path, optional baseRef, and optional
+validationCommands. The server is a local stdio service. Shell validation is a
+trusted capability and requires allow_shell_validation: true on the request;
+do not expose this server to untrusted clients without adding a command
+allowlist or stronger process isolation. Validation output is bounded and
+reported as Markdown with separate status, exit code, stdout, and stderr.
+
 Start the stdio server with:
 
 ```bash

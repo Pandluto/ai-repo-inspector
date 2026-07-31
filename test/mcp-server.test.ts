@@ -133,6 +133,7 @@ describe("MCP repository inspector contract", () => {
     const result = await callReview(repositoryPath, {
       baseRef: "main",
       validationCommands: [failedCommand, laterCommand],
+      allow_shell_validation: true,
     });
     const text = resultText(result);
 
@@ -142,5 +143,17 @@ describe("MCP repository inspector contract", () => {
     expect(text).toContain("first stderr");
     expect(text).toContain("later-validation-ran.txt");
     await expect(readFile(markerPath, "utf8")).resolves.toBe("later ran");
+  });
+
+  it("requires explicit opt-in before running shell validation commands", async () => {
+    const repositoryPath = await createFixture();
+    const result = await callReview(repositoryPath, {
+      baseRef: "main",
+      validationCommands: ["echo should-not-run"],
+    });
+    const text = resultText(result);
+
+    expect(result.isError).toBe(true);
+    expect(text).toContain("allow_shell_validation=true");
   });
 });

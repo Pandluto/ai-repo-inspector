@@ -13,6 +13,11 @@ export class ValidationInputError extends Error {
   }
 }
 
+export type ValidationRunOptions = {
+  timeoutMs?: number;
+  maxBuffer?: number;
+};
+
 function validateCommand(command: string): void {
   if (!command.trim()) {
     throw new ValidationInputError("Validation command must not be empty.");
@@ -27,7 +32,11 @@ function validateCommand(command: string): void {
   }
 }
 
-export function runValidation(command: string, cwd: string): Promise<ValidationResult> {
+export function runValidation(
+  command: string,
+  cwd: string,
+  options: ValidationRunOptions = {},
+): Promise<ValidationResult> {
   validateCommand(command);
 
   return new Promise((resolve) => {
@@ -36,8 +45,8 @@ export function runValidation(command: string, cwd: string): Promise<ValidationR
         command,
         {
           cwd,
-          timeout: VALIDATION_TIMEOUT_MS,
-          maxBuffer: VALIDATION_MAX_BUFFER,
+          timeout: options.timeoutMs ?? VALIDATION_TIMEOUT_MS,
+          maxBuffer: options.maxBuffer ?? VALIDATION_MAX_BUFFER,
         },
         (error, stdout, stderr) => {
           const errorCode = error && typeof error.code === "number" ? error.code : null;
