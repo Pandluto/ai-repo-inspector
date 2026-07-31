@@ -7,6 +7,9 @@ export type ValidationResult = {
   command: string;
   status: "passed" | "failed";
   output: string;
+  stderr: string;
+  exitCode: number | null;
+  timedOut: boolean;
 };
 
 export type ReviewRequest = {

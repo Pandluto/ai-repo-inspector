@@ -6,7 +6,16 @@ describe("markdownReport", () => {
     const report = markdownReport({
       repositoryPath: "/work/sample",
       changedFiles: [{ path: "src/index.ts", status: "modified" }],
-      validationResults: [{ command: "npm test", status: "passed", output: "ok" }],
+      validationResults: [
+        {
+          command: "npm test",
+          status: "passed",
+          output: "ok",
+          stderr: "",
+          exitCode: 0,
+          timedOut: false,
+        },
+      ],
     });
 
     expect(report).toContain("src/index.ts (modified)");
